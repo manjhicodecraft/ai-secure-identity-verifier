@@ -3,7 +3,8 @@
  * Handles communication with the backend API
  */
 
-const API_BASE_URL = 'http://localhost:8080/api';
+// Use environment variable for API base URL, fallback to localhost for development
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api';
 
 /**
  * Check if the backend API is healthy
@@ -64,4 +65,16 @@ export const verifyDocument = async (file) => {
  */
 export const getApiBaseUrl = () => {
   return API_BASE_URL;
+};
+
+/**
+ * Get environment information
+ * @returns {Object} Environment information
+ */
+export const getEnvironment = () => {
+  return {
+    isProduction: process.env.NODE_ENV === 'production',
+    apiUrl: API_BASE_URL,
+    isLocalhost: API_BASE_URL.includes('localhost') || API_BASE_URL.includes('127.0.0.1')
+  };
 };
