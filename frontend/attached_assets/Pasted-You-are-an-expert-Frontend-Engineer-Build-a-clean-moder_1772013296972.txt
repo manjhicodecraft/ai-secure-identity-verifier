@@ -57,7 +57,7 @@ Show in clean cards:
 ⚙️ Functional Requirements:
 
 * When user uploads file → send multipart/form-data request to:
-  http://localhost:8080/api/verify
+  http://18.212.249.8:8080/api/verify
 * Show loading spinner until response arrives.
 * Render results dynamically.
 * Handle error states gracefully.

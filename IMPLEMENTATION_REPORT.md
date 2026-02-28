@@ -239,10 +239,10 @@ JWT_EXPIRATION_HOURS=24
 3. Test endpoints using curl or Postman:
    ```bash
    # Health check
-   curl http://localhost:8080/api/health
+   curl http://18.212.249.8:8080/api/health
    
    # Login
-   curl -X POST http://localhost:8080/api/auth/login \
+   curl -X POST http://18.212.249.8:8080/api/auth/login \
      -H "Content-Type: application/json" \
      -d '{"username":"admin","password":"admin123"}'
    ```

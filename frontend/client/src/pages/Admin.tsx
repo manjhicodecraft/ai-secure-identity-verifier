@@ -13,6 +13,7 @@ import { Activity, ShieldAlert, CheckCircle, Search, Filter, RefreshCw } from "l
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
+import { API_ENDPOINTS } from "@/config/api";
 
 interface VerificationRecord {
   id: string;
@@ -46,11 +47,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = "/api";
-
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/stats`);
+      const response = await fetch(API_ENDPOINTS.STATS);
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -63,7 +62,7 @@ export default function AdminDashboard() {
   const fetchVerifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/verifications?limit=50`);
+      const response = await fetch(`${API_ENDPOINTS.VERIFICATIONS}?limit=50`);
       if (response.ok) {
         const data = await response.json();
         setRecords(data);

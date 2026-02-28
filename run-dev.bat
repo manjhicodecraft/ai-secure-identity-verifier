@@ -12,7 +12,7 @@ REM Start frontend in a separate window
 start "Frontend Server" cmd /k "cd frontend/client && npm install && npm run dev"
 
 echo Both servers are starting...
-echo Backend: http://localhost:8080
+echo Backend: http://18.212.249.8:8080
 echo Frontend: http://localhost:5173 (or as shown in the frontend terminal)
 echo.
 echo Press Ctrl+C in each terminal window to stop the servers.
