@@ -3,14 +3,12 @@
  * Handles communication with the backend API
  */
 
-// Backend API URL
-// Production → AWS server
-// Development → localhost
+// API Base URL
+// Priority:
+// 1. .env variable
+// 2. AWS server (production fallback)
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD
-    ? "http://18.212.249.8:8080"
-    : "http://localhost:8080");
+  import.meta.env.VITE_API_BASE_URL || "http://18.212.249.8:8080";
 
 /**
  * Check backend health
@@ -49,7 +47,9 @@ export const verifyDocument = async (file) => {
       try {
         const errorData = await response.json();
         errorMessage = errorData.message || errorMessage;
-      } catch {}
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
 
       throw new Error(errorMessage);
     }
@@ -66,7 +66,9 @@ export const verifyDocument = async (file) => {
  */
 export const getVerifications = async (limit = 50) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/verifications?limit=${limit}`);
+    const response = await fetch(
+      `${API_BASE_URL}/api/verifications?limit=${limit}`
+    );
 
     if (!response.ok) {
       throw new Error("Failed to fetch verification records");
