@@ -3,21 +3,21 @@
  * Handles communication with the backend API
  */
 
-/*
-Vite environment variables use import.meta.env
-Fallback to "/api" so frontend and backend work on same server
-*/
+// Base API URL
+// If env variable exists use it, otherwise use /api (proxy through express)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 /**
- * Check if backend API is healthy
+ * Check backend health
  */
 export const healthCheck = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      method: "GET",
+    });
 
     if (!response.ok) {
-      throw new Error(`Health check failed with status ${response.status}`);
+      throw new Error(`Health check failed: ${response.status}`);
     }
 
     return await response.json();
@@ -41,11 +41,14 @@ export const verifyDocument = async (file) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
-        message: `Server error: ${response.status}`,
-      }));
+      let errorMessage = `Server error ${response.status}`;
 
-      throw new Error(errorData.message || `Server error: ${response.status}`);
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch {}
+
+      throw new Error(errorMessage);
     }
 
     return await response.json();
@@ -56,7 +59,7 @@ export const verifyDocument = async (file) => {
 };
 
 /**
- * Get recent verification records
+ * Get verification records
  */
 export const getVerifications = async (limit = 50) => {
   try {
@@ -81,7 +84,7 @@ export const getStats = async () => {
     const response = await fetch(`${API_BASE_URL}/stats`);
 
     if (!response.ok) {
-      throw new Error("Failed to fetch statistics");
+      throw new Error("Failed to fetch stats");
     }
 
     return await response.json();
@@ -92,11 +95,9 @@ export const getStats = async () => {
 };
 
 /**
- * Get API base URL
+ * API base URL
  */
-export const getApiBaseUrl = () => {
-  return API_BASE_URL;
-};
+export const getApiBaseUrl = () => API_BASE_URL;
 
 /**
  * Environment info
