@@ -4,17 +4,20 @@
  */
 
 // Backend API URL
+// Production → AWS server
+// Development → localhost
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://18.212.249.8:8080/api";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD
+    ? "http://18.212.249.8:8080/api"
+    : "http://localhost:8080/api");
 
 /**
  * Check backend health
  */
 export const healthCheck = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
-      method: "GET",
-    });
+    const response = await fetch(`${API_BASE_URL}/health`);
 
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.status}`);
@@ -95,19 +98,17 @@ export const getStats = async () => {
 };
 
 /**
- * API base URL
+ * API base URL getter
  */
 export const getApiBaseUrl = () => API_BASE_URL;
 
 /**
  * Environment info
  */
-export const getEnvironment = () => {
-  return {
-    isProduction: import.meta.env.PROD,
-    apiUrl: API_BASE_URL,
-    isLocalhost:
-      API_BASE_URL.includes("localhost") ||
-      API_BASE_URL.includes("127.0.0.1"),
-  };
-};
+export const getEnvironment = () => ({
+  isProduction: import.meta.env.PROD,
+  apiUrl: API_BASE_URL,
+  isLocalhost:
+    API_BASE_URL.includes("localhost") ||
+    API_BASE_URL.includes("127.0.0.1"),
+});
