@@ -3,7 +3,7 @@ echo Starting AI Secure Identity Verifier - Full Stack Application...
 echo.
 
 REM Start backend in a separate window
-start "Backend Server" cmd /k "cd backend && mvn spring-boot:run"
+start "Backend Server" cmd /k "cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=aws"
 
 REM Wait a moment for backend to start
 timeout /t 5 /nobreak >nul

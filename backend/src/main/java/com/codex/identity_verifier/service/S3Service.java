@@ -104,4 +104,8 @@ public class S3Service {
             throw e;
         }
     }
+    
+    public String getBucketName() {
+        return bucketName;
+    }
 }

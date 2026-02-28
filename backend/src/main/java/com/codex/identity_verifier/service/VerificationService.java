@@ -40,7 +40,6 @@ public class VerificationService {
         try {
             // 1. Upload file to S3
             String s3Key = s3Service.uploadFile(file);
-            String s3Bucket = s3Service.getClass().getSimpleName(); // This will be configured in the service
             
             // 2. Download the file from S3 to process locally (in a real scenario, you'd use S3 URI directly)
             byte[] imageData = s3Service.downloadFile(s3Key);
@@ -85,6 +84,9 @@ public class VerificationService {
                     .build();
                     
         } catch (Exception e) {
+            // Log the full stack trace for debugging AWS-related issues
+            System.err.println("Verification failed: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Verification failed: " + e.getMessage(), e);
         }
     }
@@ -293,7 +295,7 @@ public class VerificationService {
     return VerificationRecord.builder()
             .fileName(fileName)
             .s3Key(s3Key)
-            .s3Bucket("secureverify-codex-identity") // your S3 bucket
+            .s3Bucket(s3Service.getBucketName()) // Use actual bucket name from S3Service
             .riskLevel(riskLevel)
             .riskScore(riskScore)
             .explanation(explanationList)

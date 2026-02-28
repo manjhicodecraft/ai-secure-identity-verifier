@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +27,8 @@ public class VerificationController {
     
     @Autowired
     private DynamoDBService dynamoDBService;
+    
+    private static final Logger log = LoggerFactory.getLogger(VerificationController.class);
 
     @PostMapping("/verify")
     public ResponseEntity<VerificationResponse> verifyDocument(
@@ -35,6 +39,7 @@ public class VerificationController {
             // Validate file using input validator
             InputValidator.ValidationResult fileValidation = InputValidator.validateFile(file);
             if (!fileValidation.isValid()) {
+                log.warn("File validation failed: {}", fileValidation.getErrorMessage());
                 return ResponseEntity.badRequest()
                     .body(VerificationResponse.builder()
                         .riskLevel("ERROR")
@@ -42,6 +47,9 @@ public class VerificationController {
                         .explanation(List.of(fileValidation.getErrorMessage()))
                         .build());
             }
+
+            log.info("Starting verification for file: {} with size: {} bytes", 
+                     file.getOriginalFilename(), file.getSize());
 
             // Sanitize document type if provided
             String sanitizedDocumentType = null;
@@ -51,8 +59,10 @@ public class VerificationController {
 
             // Process the file using the service
             VerificationResponse response = verificationService.verifyDocument(file);
+            log.info("Verification completed successfully for file: {}", file.getOriginalFilename());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            log.error("Verification failed", e); // Log full stack trace
             return ResponseEntity.internalServerError()
                 .body(VerificationResponse.builder()
                     .riskLevel("ERROR")
