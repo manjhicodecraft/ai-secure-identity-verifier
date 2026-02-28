@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { verificationResultSchema } from './schema';
 
 // API Configuration for shared routes
-const API_BASE_URL = process.env.VITE_API_BASE_URL || "http://18.212.249.8:8080";
+// Simple fallback approach - always use production URL in shared modules
+const API_BASE_URL = "http://18.212.249.8:8080";
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
