@@ -9,15 +9,15 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.PROD
-    ? "http://18.212.249.8:8080/api"
-    : "http://localhost:8080/api");
+    ? "http://18.212.249.8:8080"
+    : "http://localhost:8080");
 
 /**
  * Check backend health
  */
 export const healthCheck = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/api/health`);
 
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.status}`);
@@ -38,7 +38,7 @@ export const verifyDocument = async (file) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch(`${API_BASE_URL}/verify`, {
+    const response = await fetch(`${API_BASE_URL}/api/verify`, {
       method: "POST",
       body: formData,
     });
@@ -66,7 +66,7 @@ export const verifyDocument = async (file) => {
  */
 export const getVerifications = async (limit = 50) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/verifications?limit=${limit}`);
+    const response = await fetch(`${API_BASE_URL}/api/verifications?limit=${limit}`);
 
     if (!response.ok) {
       throw new Error("Failed to fetch verification records");
@@ -84,7 +84,7 @@ export const getVerifications = async (limit = 50) => {
  */
 export const getStats = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/stats`);
+    const response = await fetch(`${API_BASE_URL}/api/stats`);
 
     if (!response.ok) {
       throw new Error("Failed to fetch stats");
