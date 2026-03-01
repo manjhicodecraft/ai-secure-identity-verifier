@@ -133,7 +133,8 @@ public class VerificationService {
         } catch (Exception e) {
             // Log the full stack trace for debugging AWS-related issues
             log.error("Verification failed", e);
-            throw new RuntimeException("Verification failed: " + e.getMessage(), e);
+            String message = e.getMessage() != null ? e.getMessage() : "Unknown verification error";
+            throw new RuntimeException(message, e);
         } finally {
             if (deleteUploadedFile && s3Key != null) {
                 try {

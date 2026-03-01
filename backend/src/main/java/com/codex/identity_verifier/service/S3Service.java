@@ -29,6 +29,7 @@ public class S3Service {
      * @return The S3 key of the uploaded file
      */
     public String uploadFile(MultipartFile file) throws IOException {
+        ensureBucketAccessible();
         String key = generateUniqueKey(file.getOriginalFilename());
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -107,5 +108,21 @@ public class S3Service {
     
     public String getBucketName() {
         return bucketName;
+    }
+
+    private void ensureBucketAccessible() {
+        try {
+            if (bucketName == null || bucketName.isBlank()) {
+                throw new RuntimeException("S3 bucket name is not configured. Set AWS_S3_BUCKET_NAME.");
+            }
+            s3Client.headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
+        } catch (NoSuchBucketException e) {
+            throw new RuntimeException("Configured S3 bucket does not exist: " + bucketName + ". Set AWS_S3_BUCKET_NAME to an existing bucket.", e);
+        } catch (S3Exception e) {
+            if (e.statusCode() == 403) {
+                throw new RuntimeException("Access denied to S3 bucket: " + bucketName + ". Update IAM permissions for s3:HeadBucket and s3:PutObject.", e);
+            }
+            throw new RuntimeException("Unable to access S3 bucket: " + bucketName + ". " + e.getMessage(), e);
+        }
     }
 }

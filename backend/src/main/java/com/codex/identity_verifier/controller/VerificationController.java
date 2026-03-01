@@ -60,11 +60,12 @@ public class VerificationController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Verification failed", e); // Log full stack trace
+            String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
             return ResponseEntity.internalServerError()
                 .body(VerificationResponse.builder()
                     .riskLevel("ERROR")
                     .riskScore(100)
-                    .explanation(List.of("Verification failed: " + e.getMessage()))
+                    .explanation(List.of("Verification failed: " + message))
                     .extractedData(VerificationResponse.ExtractedData.builder()
                         .name("")
                         .idNumber("")

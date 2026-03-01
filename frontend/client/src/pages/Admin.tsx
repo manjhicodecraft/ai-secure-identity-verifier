@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { API_ENDPOINTS } from "@/config/api";
+import { authHeaders, clearAuthToken, getAuthToken, setAuthToken } from "@/lib/auth";
 
 interface VerificationRecord {
   id: string;
@@ -45,11 +46,53 @@ export default function AdminDashboard() {
   const [records, setRecords] = useState<VerificationRecord[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!getAuthToken());
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+
+  const logout = () => {
+    clearAuthToken();
+    setIsAuthenticated(false);
+    setRecords([]);
+    setStats(null);
+  };
+
+  const login = async () => {
+    try {
+      setAuthLoading(true);
+      setError(null);
+      const response = await fetch(API_ENDPOINTS.LOGIN, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.token) {
+        setError("Login failed. Use admin credentials.");
+        return;
+      }
+      setAuthToken(data.token);
+      setIsAuthenticated(true);
+      setPassword("");
+    } catch {
+      setError("Login request failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.STATS);
+      const response = await fetch(API_ENDPOINTS.STATS, {
+        headers: authHeaders(),
+      });
+      if (response.status === 401 || response.status === 403) {
+        logout();
+        setError("Session expired. Please login again.");
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -62,7 +105,14 @@ export default function AdminDashboard() {
   const fetchVerifications = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_ENDPOINTS.VERIFICATIONS}?limit=50`);
+      const response = await fetch(`${API_ENDPOINTS.VERIFICATIONS}?limit=50`, {
+        headers: authHeaders(),
+      });
+      if (response.status === 401 || response.status === 403) {
+        logout();
+        setError("Session expired. Please login again.");
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         setRecords(data);
@@ -79,9 +129,13 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
     fetchStats();
     fetchVerifications();
-  }, []);
+  }, [isAuthenticated]);
 
   const handleRefresh = () => {
     fetchStats();
@@ -93,12 +147,46 @@ export default function AdminDashboard() {
       <Navbar />
       
       <main className="flex-1 container mx-auto px-4 py-8">
+        {!isAuthenticated ? (
+          <Card className="max-w-md mx-auto p-6 glass-panel cyber-border">
+            <h1 className="text-2xl font-display font-bold mb-2">Admin Login</h1>
+            <p className="text-sm text-muted-foreground mb-4">
+              Stats and records require admin token.
+            </p>
+            <div className="space-y-3">
+              <Input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button onClick={login} disabled={authLoading} className="w-full">
+                {authLoading ? "Signing in..." : "Sign In"}
+              </Button>
+            </div>
+          </Card>
+        ) : (
+        <>
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-display font-bold">Command Center</h1>
             <p className="text-muted-foreground mt-1">Real-time overview of verification activities</p>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="border-border/50"
+            >
+              Logout
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 
@@ -232,6 +320,8 @@ export default function AdminDashboard() {
             )}
           </div>
         </Card>
+        </>
+        )}
       </main>
     </div>
   );
