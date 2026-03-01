@@ -77,16 +77,19 @@ public class AuthController {
             
             boolean isValid = authService.validateToken(token);
             String username = isValid ? authService.getUsernameFromToken(token) : null;
+            String role = isValid ? authService.getRoleFromToken(token) : null;
             
             Map<String, Object> response = new HashMap<>();
             response.put("valid", isValid);
             response.put("username", username);
+            response.put("role", role);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> response = new HashMap<>();
             response.put("valid", false);
             response.put("username", null);
+            response.put("role", null);
             return ResponseEntity.ok(response);
         }
     }

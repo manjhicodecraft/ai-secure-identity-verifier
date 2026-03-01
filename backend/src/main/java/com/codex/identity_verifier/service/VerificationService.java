@@ -3,6 +3,7 @@ package com.codex.identity_verifier.service;
 import com.codex.identity_verifier.dto.VerificationResponse;
 import com.codex.identity_verifier.model.VerificationRecord;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
@@ -23,14 +24,22 @@ public class VerificationService {
     private final RekognitionService rekognitionService;
     private final TextractService textractService;
     private final DynamoDBService dynamoDBService;
+    private final DataProtectionService dataProtectionService;
+    private final FraudModelService fraudModelService;
+
+    @Value("${verification.delete-uploaded-file:true}")
+    private boolean deleteUploadedFile;
 
     @Autowired
     public VerificationService(S3Service s3Service, RekognitionService rekognitionService, 
-                              TextractService textractService, DynamoDBService dynamoDBService) {
+                              TextractService textractService, DynamoDBService dynamoDBService,
+                              DataProtectionService dataProtectionService, FraudModelService fraudModelService) {
         this.s3Service = s3Service;
         this.rekognitionService = rekognitionService;
         this.textractService = textractService;
         this.dynamoDBService = dynamoDBService;
+        this.dataProtectionService = dataProtectionService;
+        this.fraudModelService = fraudModelService;
     }
 
     /**
@@ -39,12 +48,14 @@ public class VerificationService {
      * @return VerificationResponse containing the verification results
      */
     public VerificationResponse verifyDocument(MultipartFile file) {
+        String s3Key = null;
         try {
             // 1. Upload file to S3
-            String s3Key = s3Service.uploadFile(file);
+            s3Key = s3Service.uploadFile(file);
             
             // 2. Download the file from S3 to process locally (in a real scenario, you'd use S3 URI directly)
             byte[] imageData = s3Service.downloadFile(s3Key);
+            String fileHash = dataProtectionService.sha256Hex(imageData);
 
             boolean isPdf = isPdfFile(file);
             boolean imageAnalysisEnabled = !isPdf;
@@ -71,11 +82,23 @@ public class VerificationService {
                     identityInfo,
                     imageAnalysisEnabled
             );
+
+            int identityConsistencyPenalty = evaluateIdentityConsistency(identityInfo);
+            riskScore = Math.min(100, riskScore + identityConsistencyPenalty);
+
+            int modelRisk = fraudModelService.getAdditionalRiskScore(fileHash, determineRiskLevel(riskScore));
+            riskScore = Math.min(100, riskScore + modelRisk);
             String riskLevel = determineRiskLevel(riskScore);
             
             // 6. Generate explanations based on analysis
             List<String> explanations = generateExplanations(faceDetectionResult, tamperDetectionResult, 
                                                            qualityAnalysisResult, identityInfo, riskScore, imageAnalysisEnabled);
+            if (identityConsistencyPenalty > 0) {
+                explanations.add("Cross-field validation: inconsistent extracted identity fields detected.");
+            }
+            if (modelRisk > 0) {
+                explanations.add("External fraud model raised additional risk score by " + modelRisk + " points.");
+            }
             if (isPdf) {
                 explanations.add(0, "PDF detected: OCR extraction performed via Textract; image-only checks were skipped.");
             }
@@ -88,7 +111,8 @@ public class VerificationService {
                 file.getOriginalFilename(), s3Key, riskLevel, riskScore, 
                 explanations.toArray(new String[0]), identityInfo, 
                 highestConfidence,
-                isTampered
+                isTampered,
+                fileHash
             );
             
             // 8. Save record to DynamoDB
@@ -110,6 +134,14 @@ public class VerificationService {
             // Log the full stack trace for debugging AWS-related issues
             log.error("Verification failed", e);
             throw new RuntimeException("Verification failed: " + e.getMessage(), e);
+        } finally {
+            if (deleteUploadedFile && s3Key != null) {
+                try {
+                    s3Service.deleteFile(s3Key);
+                } catch (Exception cleanupException) {
+                    log.warn("Failed to delete uploaded object from S3: {}", s3Key, cleanupException);
+                }
+            }
         }
     }
 
@@ -310,7 +342,8 @@ public class VerificationService {
         String[] explanations,
         Map<String, String> identityInfo,
         Double faceMatchConfidence,
-        Boolean isTampered) {
+        Boolean isTampered,
+        String fileHash) {
 
     VerificationRecord.ExtractedData extractedData =
             VerificationRecord.ExtractedData.builder()
@@ -326,8 +359,10 @@ public class VerificationService {
 
     return VerificationRecord.builder()
             .fileName(fileName)
+            .fileHash(fileHash)
             .s3Key(s3Key)
             .s3Bucket(s3Service.getBucketName()) // Use actual bucket name from S3Service
+            .s3ObjectDeleted(deleteUploadedFile)
             .riskLevel(riskLevel)
             .riskScore(riskScore)
             .explanation(explanationList)
@@ -336,6 +371,24 @@ public class VerificationService {
             .isTampered(isTampered)
             .build();
 }
+
+    private int evaluateIdentityConsistency(Map<String, String> identityInfo) {
+        int penalty = 0;
+        String name = identityInfo.getOrDefault("name", "");
+        String idNumber = identityInfo.getOrDefault("idNumber", "");
+        String dob = identityInfo.getOrDefault("dob", "");
+
+        if (!name.isBlank() && name.matches(".*\\d.*")) {
+            penalty += 15;
+        }
+        if (!idNumber.isBlank() && idNumber.length() < 5) {
+            penalty += 10;
+        }
+        if (!dob.isBlank() && !dob.matches(".*\\d{2,4}.*")) {
+            penalty += 10;
+        }
+        return penalty;
+    }
 
     private boolean isPdfFile(MultipartFile file) {
         String contentType = file.getContentType();

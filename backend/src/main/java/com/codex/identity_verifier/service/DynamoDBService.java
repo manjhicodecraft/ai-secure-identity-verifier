@@ -20,13 +20,16 @@ public class DynamoDBService {
 
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbClient dynamoDbClient;
+    private final DataProtectionService dataProtectionService;
     @Value("${aws.dynamodb.table-name:IdentityVerifications}")
     private String tableName;
 
     @Autowired
-    public DynamoDBService(DynamoDbEnhancedClient enhancedClient, DynamoDbClient dynamoDbClient) {
+    public DynamoDBService(DynamoDbEnhancedClient enhancedClient, DynamoDbClient dynamoDbClient,
+                           DataProtectionService dataProtectionService) {
         this.enhancedClient = enhancedClient;
         this.dynamoDbClient = dynamoDbClient;
+        this.dataProtectionService = dataProtectionService;
     }
 
     /**
@@ -106,10 +109,10 @@ public class DynamoDBService {
 
         // Save the item; create table lazily if missing.
         try {
-            verificationTable.putItem(verificationRecord);
+            verificationTable.putItem(encryptRecord(verificationRecord));
         } catch (ResourceNotFoundException ex) {
             createTableIfNotExists();
-            verificationTable.putItem(verificationRecord);
+            verificationTable.putItem(encryptRecord(verificationRecord));
         }
     }
 
@@ -129,6 +132,7 @@ public class DynamoDBService {
                 .items()
                 .stream()
                 .filter(record -> id.equals(record.getId()))
+                .map(this::decryptRecord)
                 .findFirst()
                 .orElse(null);
         } catch (Exception e) {
@@ -149,7 +153,7 @@ public class DynamoDBService {
         // In a production environment, you'd want to use a query with a GSI
         try {
             java.util.List<VerificationRecord> result = new java.util.ArrayList<>();
-            verificationTable.scan(r -> r.limit(limit)).items().iterator().forEachRemaining(result::add);
+            verificationTable.scan(r -> r.limit(limit)).items().iterator().forEachRemaining(item -> result.add(decryptRecord(item)));
             return result;
         } catch (Exception e) {
             // Return empty list if there's an error
@@ -166,7 +170,7 @@ public class DynamoDBService {
                 .table(tableName, TableSchema.fromBean(VerificationRecord.class));
 
         verificationRecord.setUpdatedAt(Instant.now());
-        verificationTable.updateItem(verificationRecord);
+        verificationTable.updateItem(encryptRecord(verificationRecord));
     }
 
     /**
@@ -181,5 +185,33 @@ public class DynamoDBService {
                 .partitionValue(id)
                 .sortValue(createdAt.toString())
                 .build());
+    }
+
+    private VerificationRecord encryptRecord(VerificationRecord record) {
+        if (record == null || record.getExtractedData() == null) {
+            return record;
+        }
+        VerificationRecord.ExtractedData data = record.getExtractedData();
+        data.setName(dataProtectionService.encrypt(data.getName()));
+        data.setIdNumber(dataProtectionService.encrypt(data.getIdNumber()));
+        data.setDob(dataProtectionService.encrypt(data.getDob()));
+        data.setAddress(dataProtectionService.encrypt(data.getAddress()));
+        data.setExpiryDate(dataProtectionService.encrypt(data.getExpiryDate()));
+        record.setExtractedData(data);
+        return record;
+    }
+
+    private VerificationRecord decryptRecord(VerificationRecord record) {
+        if (record == null || record.getExtractedData() == null) {
+            return record;
+        }
+        VerificationRecord.ExtractedData data = record.getExtractedData();
+        data.setName(dataProtectionService.decrypt(data.getName()));
+        data.setIdNumber(dataProtectionService.decrypt(data.getIdNumber()));
+        data.setDob(dataProtectionService.decrypt(data.getDob()));
+        data.setAddress(dataProtectionService.decrypt(data.getAddress()));
+        data.setExpiryDate(dataProtectionService.decrypt(data.getExpiryDate()));
+        record.setExtractedData(data);
+        return record;
     }
 }

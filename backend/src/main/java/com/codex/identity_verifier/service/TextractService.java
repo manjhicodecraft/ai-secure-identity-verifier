@@ -16,12 +16,14 @@ import java.util.Map;
 public class TextractService {
 
     private final TextractClient textractClient;
+    private final TesseractService tesseractService;
     @Value("${aws.textract.min-confidence:80.0}")
     private Double minConfidence;
 
     @Autowired
-    public TextractService(TextractClient textractClient) {
+    public TextractService(TextractClient textractClient, TesseractService tesseractService) {
         this.textractClient = textractClient;
+        this.tesseractService = tesseractService;
     }
 
     /**
@@ -124,6 +126,14 @@ public class TextractService {
         // If we couldn't extract from the structured analysis, try a more direct approach
         if (identityInfo.isEmpty()) {
             identityInfo = extractIdentityInformationDirect(lines);
+        }
+
+        // Optional fallback OCR via local tesseract binary for missed fields.
+        String fallbackText = tesseractService.extractText(imageData);
+        if (fallbackText != null && !fallbackText.isBlank()) {
+            String[] fallbackLines = fallbackText.split("\\R");
+            Map<String, String> fallback = extractIdentityInformationDirect(java.util.Arrays.asList(fallbackLines));
+            fallback.forEach(identityInfo::putIfAbsent);
         }
 
         return identityInfo;
