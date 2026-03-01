@@ -31,14 +31,13 @@ public class SecurityConfig {
 
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(
+                            "/error",
                             "/api/verify",
                             "/api/health",
                             "/api/stats",
-                            "/api/auth/**"
+                            "/api/auth/**",
+                            "/api/verifications/**"
                     ).permitAll()
-
-                    .requestMatchers("/api/verifications/**")
-                    .permitAll()
 
                     .anyRequest().permitAll()
             )
@@ -65,7 +64,7 @@ public class SecurityConfig {
         ));
 
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
+        configuration.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();

@@ -8,7 +8,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
-import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.time.Instant;
@@ -19,12 +19,14 @@ import java.util.UUID;
 public class DynamoDBService {
 
     private final DynamoDbEnhancedClient enhancedClient;
+    private final DynamoDbClient dynamoDbClient;
     @Value("${aws.dynamodb.table-name:IdentityVerifications}")
     private String tableName;
 
     @Autowired
-    public DynamoDBService(DynamoDbEnhancedClient enhancedClient) {
+    public DynamoDBService(DynamoDbEnhancedClient enhancedClient, DynamoDbClient dynamoDbClient) {
         this.enhancedClient = enhancedClient;
+        this.dynamoDbClient = dynamoDbClient;
     }
 
     /**
@@ -32,11 +34,6 @@ public class DynamoDBService {
      */
     public void createTableIfNotExists() {
         try {
-            // Create a regular DynamoDbClient to check if table exists
-            software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamoDbClient = 
-                software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
-                    .build();
-
             // Check if table exists
             dynamoDbClient.describeTable(DescribeTableRequest.builder()
                     .tableName(tableName)
@@ -52,10 +49,6 @@ public class DynamoDBService {
      * Creates the DynamoDB table for verification records
      */
     private void createTable() {
-        software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamoDbClient = 
-            software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
-                .build();
-
         CreateTableRequest createTableRequest = CreateTableRequest.builder()
                 .tableName(tableName)
                 .keySchema(
@@ -111,8 +104,13 @@ public class DynamoDBService {
         verificationRecord.setCreatedAt(now);
         verificationRecord.setUpdatedAt(now);
 
-        // Save the item
-        verificationTable.putItem(verificationRecord);
+        // Save the item; create table lazily if missing.
+        try {
+            verificationTable.putItem(verificationRecord);
+        } catch (ResourceNotFoundException ex) {
+            createTableIfNotExists();
+            verificationTable.putItem(verificationRecord);
+        }
     }
 
     /**

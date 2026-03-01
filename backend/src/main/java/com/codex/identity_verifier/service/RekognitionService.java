@@ -10,7 +10,6 @@ import software.amazon.awssdk.services.rekognition.model.*;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -51,6 +50,10 @@ public class RekognitionService {
         result.put("faceCount", response.faceDetails().size());
         result.put("faces", response.faceDetails());
         result.put("isFaceDetected", !response.faceDetails().isEmpty());
+        result.put("highestConfidence", response.faceDetails().stream()
+                .mapToDouble(face -> face.confidence() != null ? face.confidence() : 0.0f)
+                .max()
+                .orElse(0.0));
         
         return result;
     }
@@ -101,6 +104,14 @@ public class RekognitionService {
         try {
             // Convert image to buffered image to check for basic properties
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageData));
+            if (image == null) {
+                result.put("error", "Unsupported image format for tamper detection");
+                result.put("isLowQuality", false);
+                result.put("hasUniformBackground", false);
+                result.put("hasSuspiciousContent", false);
+                result.put("isTampered", false);
+                return result;
+            }
             
             // Check image properties that might indicate tampering
             result.put("width", image.getWidth());
@@ -134,12 +145,15 @@ public class RekognitionService {
             DetectTextResponse textResponse = rekognitionClient.detectText(textRequest);
             result.put("detectedTexts", textResponse.textDetections());
             
-        } catch (IOException e) {
+        } catch (Exception e) {
             result.put("error", "Failed to analyze image: " + e.getMessage());
+            result.put("hasSuspiciousContent", false);
+            result.put("isLowQuality", false);
         }
         
         // Assume tampering if suspicious content is detected
-        result.put("isTampered", result.get("hasSuspiciousContent").equals(true));
+        boolean suspicious = Boolean.TRUE.equals(result.get("hasSuspiciousContent"));
+        result.put("isTampered", suspicious);
         
         return result;
     }

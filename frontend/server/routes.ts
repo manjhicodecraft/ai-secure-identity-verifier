@@ -7,7 +7,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  const backendUrl = process.env.BACKEND_URL || "http://18.212.249.8:8080";
+  const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
 
   app.use(
     "/api/*",

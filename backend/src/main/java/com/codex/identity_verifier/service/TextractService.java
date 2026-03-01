@@ -84,15 +84,15 @@ public class TextractService {
         List<String> lines = (List<String>) textResult.get("lines");
 
         // Look for common identity document fields
-        for (String line : lines) {
-            line = line.toLowerCase().trim();
+        for (int i = 0; i < lines.size(); i++) {
+            String originalLine = lines.get(i).trim();
+            String normalizedLine = originalLine.toLowerCase();
             
             // Extract name (look for common name patterns)
-            if (line.contains("name") && !identityInfo.containsKey("name")) {
+            if (normalizedLine.contains("name") && !identityInfo.containsKey("name")) {
                 // Try to get the next line which might contain the name
-                int currentIndex = lines.indexOf(line);
-                if (currentIndex + 1 < lines.size()) {
-                    String nextLine = lines.get(currentIndex + 1);
+                if (i + 1 < lines.size()) {
+                    String nextLine = lines.get(i + 1);
                     if (isLikelyName(nextLine)) {
                         identityInfo.put("name", nextLine.trim());
                     }
@@ -100,24 +100,24 @@ public class TextractService {
             }
             
             // Extract ID number (look for common ID patterns)
-            if (isLikelyIdNumber(line) && !identityInfo.containsKey("idNumber")) {
-                identityInfo.put("idNumber", line.toUpperCase());
+            if (isLikelyIdNumber(originalLine) && !identityInfo.containsKey("idNumber")) {
+                identityInfo.put("idNumber", originalLine.toUpperCase());
             }
             
             // Extract date of birth (look for date patterns)
-            if (isLikelyDate(line) && !identityInfo.containsKey("dob")) {
-                identityInfo.put("dob", line);
+            if (isLikelyDate(originalLine) && !identityInfo.containsKey("dob")) {
+                identityInfo.put("dob", originalLine);
             }
             
             // Extract expiry date
-            if ((line.contains("expiry") || line.contains("expire") || line.contains("valid")) && 
-                isLikelyDate(line) && !identityInfo.containsKey("expiryDate")) {
-                identityInfo.put("expiryDate", line);
+            if ((normalizedLine.contains("expiry") || normalizedLine.contains("expire") || normalizedLine.contains("valid")) && 
+                isLikelyDate(originalLine) && !identityInfo.containsKey("expiryDate")) {
+                identityInfo.put("expiryDate", originalLine);
             }
             
             // Extract address (if present)
-            if (isLikelyAddress(line) && !identityInfo.containsKey("address")) {
-                identityInfo.put("address", line);
+            if (isLikelyAddress(originalLine) && !identityInfo.containsKey("address")) {
+                identityInfo.put("address", originalLine);
             }
         }
 

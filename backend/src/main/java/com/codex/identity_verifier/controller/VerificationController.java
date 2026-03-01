@@ -15,7 +15,6 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -32,8 +31,7 @@ public class VerificationController {
 
     @PostMapping("/verify")
     public ResponseEntity<VerificationResponse> verifyDocument(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "documentType", required = false) String documentType) {
+            @RequestParam("file") MultipartFile file) {
         
         try {
             // Validate file using input validator
@@ -45,17 +43,16 @@ public class VerificationController {
                         .riskLevel("ERROR")
                         .riskScore(100)
                         .explanation(List.of(fileValidation.getErrorMessage()))
+                        .extractedData(VerificationResponse.ExtractedData.builder()
+                            .name("")
+                            .idNumber("")
+                            .dob("")
+                            .build())
                         .build());
             }
 
             log.info("Starting verification for file: {} with size: {} bytes", 
                      file.getOriginalFilename(), file.getSize());
-
-            // Sanitize document type if provided
-            String sanitizedDocumentType = null;
-            if (documentType != null) {
-                sanitizedDocumentType = InputValidator.sanitizeInput(documentType);
-            }
 
             // Process the file using the service
             VerificationResponse response = verificationService.verifyDocument(file);
@@ -68,6 +65,11 @@ public class VerificationController {
                     .riskLevel("ERROR")
                     .riskScore(100)
                     .explanation(List.of("Verification failed: " + e.getMessage()))
+                    .extractedData(VerificationResponse.ExtractedData.builder()
+                        .name("")
+                        .idNumber("")
+                        .dob("")
+                        .build())
                     .build());
         }
     }
@@ -129,15 +131,5 @@ public class VerificationController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
-    }
-
-    private boolean isValidFileType(String contentType) {
-        return contentType != null && (
-            contentType.equals("image/jpeg") ||
-            contentType.equals("image/jpg") ||
-            contentType.equals("image/png") ||
-            contentType.equals("image/webp") ||
-            contentType.equals("application/pdf")
-        );
     }
 }

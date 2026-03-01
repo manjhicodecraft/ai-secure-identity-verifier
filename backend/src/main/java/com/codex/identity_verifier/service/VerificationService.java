@@ -5,17 +5,19 @@ import com.codex.identity_verifier.model.VerificationRecord;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Arrays;
-import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 
 @Service
 public class VerificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(VerificationService.class);
 
     private final S3Service s3Service;
     private final RekognitionService rekognitionService;
@@ -43,29 +45,50 @@ public class VerificationService {
             
             // 2. Download the file from S3 to process locally (in a real scenario, you'd use S3 URI directly)
             byte[] imageData = s3Service.downloadFile(s3Key);
+
+            boolean isPdf = isPdfFile(file);
+            boolean imageAnalysisEnabled = !isPdf;
             
             // 3. Perform image analysis with Rekognition
-            Map<String, Object> faceDetectionResult = rekognitionService.detectFaces(imageData);
-            Map<String, Object> tamperDetectionResult = rekognitionService.detectImageTampering(imageData);
-            Map<String, Object> qualityAnalysisResult = rekognitionService.analyzeImageQuality(imageData);
+            Map<String, Object> faceDetectionResult = imageAnalysisEnabled
+                    ? rekognitionService.detectFaces(imageData)
+                    : defaultFaceDetectionResult();
+            Map<String, Object> tamperDetectionResult = imageAnalysisEnabled
+                    ? rekognitionService.detectImageTampering(imageData)
+                    : defaultTamperDetectionResult();
+            Map<String, Object> qualityAnalysisResult = imageAnalysisEnabled
+                    ? rekognitionService.analyzeImageQuality(imageData)
+                    : defaultQualityAnalysisResult();
             
             // 4. Extract text from document using Textract
             Map<String, String> identityInfo = textractService.extractIdentityInformation(imageData);
             
             // 5. Calculate risk score based on multiple factors
-            int riskScore = calculateRiskScore(faceDetectionResult, tamperDetectionResult, qualityAnalysisResult, identityInfo);
+            int riskScore = calculateRiskScore(
+                    faceDetectionResult,
+                    tamperDetectionResult,
+                    qualityAnalysisResult,
+                    identityInfo,
+                    imageAnalysisEnabled
+            );
             String riskLevel = determineRiskLevel(riskScore);
             
             // 6. Generate explanations based on analysis
             List<String> explanations = generateExplanations(faceDetectionResult, tamperDetectionResult, 
-                                                           qualityAnalysisResult, identityInfo, riskScore);
+                                                           qualityAnalysisResult, identityInfo, riskScore, imageAnalysisEnabled);
+            if (isPdf) {
+                explanations.add(0, "PDF detected: OCR extraction performed via Textract; image-only checks were skipped.");
+            }
+
+            Double highestConfidence = ((Number) faceDetectionResult.getOrDefault("highestConfidence", 0.0)).doubleValue();
+            Boolean isTampered = Boolean.TRUE.equals(tamperDetectionResult.get("isTampered"));
             
             // 7. Create verification record
             VerificationRecord verificationRecord = createVerificationRecord(
                 file.getOriginalFilename(), s3Key, riskLevel, riskScore, 
                 explanations.toArray(new String[0]), identityInfo, 
-                (Double) faceDetectionResult.get("highestConfidence"), 
-                (Boolean) tamperDetectionResult.get("isTampered")
+                highestConfidence,
+                isTampered
             );
             
             // 8. Save record to DynamoDB
@@ -77,16 +100,15 @@ public class VerificationService {
                     .riskScore(riskScore)
                     .explanation(explanations)
                     .extractedData(VerificationResponse.ExtractedData.builder()
-                            .name(identityInfo.get("name"))
-                            .idNumber(identityInfo.get("idNumber"))
-                            .dob(identityInfo.get("dob"))
+                            .name(identityInfo.getOrDefault("name", ""))
+                            .idNumber(identityInfo.getOrDefault("idNumber", ""))
+                            .dob(identityInfo.getOrDefault("dob", ""))
                             .build())
                     .build();
                     
         } catch (Exception e) {
             // Log the full stack trace for debugging AWS-related issues
-            System.err.println("Verification failed: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Verification failed", e);
             throw new RuntimeException("Verification failed: " + e.getMessage(), e);
         }
     }
@@ -97,38 +119,41 @@ public class VerificationService {
     private int calculateRiskScore(Map<String, Object> faceDetectionResult, 
                                   Map<String, Object> tamperDetectionResult,
                                   Map<String, Object> qualityAnalysisResult,
-                                  Map<String, String> identityInfo) {
+                                  Map<String, String> identityInfo,
+                                  boolean imageAnalysisEnabled) {
         int baseScore = 0;
         
-        // Factor 1: Face detection analysis
-        if (!(Boolean) faceDetectionResult.getOrDefault("isFaceDetected", false)) {
-            baseScore += 35; // High risk if no face detected in ID photo
-        } else {
-            // Check face quality if face is detected
-            Integer faceCount = (Integer) faceDetectionResult.get("faceCount");
-            if (faceCount != null && faceCount > 1) {
-                baseScore += 15; // Multiple faces may indicate document issues
+        if (imageAnalysisEnabled) {
+            // Factor 1: Face detection analysis
+            if (!(Boolean) faceDetectionResult.getOrDefault("isFaceDetected", false)) {
+                baseScore += 35; // High risk if no face detected in ID photo
+            } else {
+                // Check face quality if face is detected
+                Integer faceCount = (Integer) faceDetectionResult.get("faceCount");
+                if (faceCount != null && faceCount > 1) {
+                    baseScore += 15; // Multiple faces may indicate document issues
+                }
             }
-        }
-        
-        // Factor 2: Tampering detection (highest weight)
-        if ((Boolean) tamperDetectionResult.getOrDefault("isTampered", false)) {
-            baseScore += 60; // Very high risk if tampering detected
-        }
-        
-        // Factor 3: Image quality analysis
-        @SuppressWarnings("unchecked")
-        Map<String, Boolean> qualityIndicators = (Map<String, Boolean>) qualityAnalysisResult.getOrDefault("qualityIndicators", Map.of());
-        if (qualityIndicators.getOrDefault("isBlurry", false)) {
-            baseScore += 25; // Blur significantly increases risk
-        }
-        
-        if (!qualityIndicators.getOrDefault("hasGoodLighting", false)) {
-            baseScore += 10; // Poor lighting affects analysis accuracy
-        }
-        
-        if (qualityIndicators.getOrDefault("isDocument", false)) {
-            baseScore -= 15; // Document type decreases risk
+            
+            // Factor 2: Tampering detection (highest weight)
+            if ((Boolean) tamperDetectionResult.getOrDefault("isTampered", false)) {
+                baseScore += 60; // Very high risk if tampering detected
+            }
+            
+            // Factor 3: Image quality analysis
+            @SuppressWarnings("unchecked")
+            Map<String, Boolean> qualityIndicators = (Map<String, Boolean>) qualityAnalysisResult.getOrDefault("qualityIndicators", Map.of());
+            if (qualityIndicators.getOrDefault("isBlurry", false)) {
+                baseScore += 25; // Blur significantly increases risk
+            }
+            
+            if (!qualityIndicators.getOrDefault("hasGoodLighting", false)) {
+                baseScore += 10; // Poor lighting affects analysis accuracy
+            }
+            
+            if (qualityIndicators.getOrDefault("isDocument", false)) {
+                baseScore -= 15; // Document type decreases risk
+            }
         }
         
         // Factor 4: Identity information completeness
@@ -151,20 +176,22 @@ public class VerificationService {
             baseScore -= 20; // All fields present
         }
         
-        // Factor 5: Suspicious content detection
-        if ((Boolean) tamperDetectionResult.getOrDefault("hasSuspiciousContent", false)) {
-            baseScore += 30;
-        }
-        
-        // Factor 6: Image dimensions (too small/large can be suspicious)
-        Integer width = (Integer) tamperDetectionResult.get("width");
-        Integer height = (Integer) tamperDetectionResult.get("height");
-        if (width != null && height != null) {
-            int totalPixels = width * height;
-            if (totalPixels < 100000) { // Very low resolution
-                baseScore += 20;
-            } else if (totalPixels > 20000000) { // Extremely high resolution (suspicious)
-                baseScore += 10;
+        if (imageAnalysisEnabled) {
+            // Factor 5: Suspicious content detection
+            if ((Boolean) tamperDetectionResult.getOrDefault("hasSuspiciousContent", false)) {
+                baseScore += 30;
+            }
+            
+            // Factor 6: Image dimensions (too small/large can be suspicious)
+            Integer width = (Integer) tamperDetectionResult.get("width");
+            Integer height = (Integer) tamperDetectionResult.get("height");
+            if (width != null && height != null) {
+                int totalPixels = width * height;
+                if (totalPixels < 100000) { // Very low resolution
+                    baseScore += 20;
+                } else if (totalPixels > 20000000) { // Extremely high resolution (suspicious)
+                    baseScore += 10;
+                }
             }
         }
         
@@ -192,39 +219,44 @@ public class VerificationService {
                                              Map<String, Object> tamperDetectionResult,
                                              Map<String, Object> qualityAnalysisResult,
                                              Map<String, String> identityInfo,
-                                             int riskScore) {
+                                             int riskScore,
+                                             boolean imageAnalysisEnabled) {
         List<String> explanations = new ArrayList<>();
         
-        // Face detection results
-        Integer faceCount = (Integer) faceDetectionResult.get("faceCount");
-        if ((Boolean) faceDetectionResult.getOrDefault("isFaceDetected", false)) {
-            if (faceCount != null && faceCount > 1) {
-                explanations.add("Face detection: Multiple faces (" + faceCount + ") detected - may indicate document issues");
+        if (imageAnalysisEnabled) {
+            // Face detection results
+            Integer faceCount = (Integer) faceDetectionResult.get("faceCount");
+            if ((Boolean) faceDetectionResult.getOrDefault("isFaceDetected", false)) {
+                if (faceCount != null && faceCount > 1) {
+                    explanations.add("Face detection: Multiple faces (" + faceCount + ") detected - may indicate document issues");
+                } else {
+                    explanations.add("Face detection: Single face detected - positive indicator");
+                }
             } else {
-                explanations.add("Face detection: Single face detected - positive indicator");
+                explanations.add("WARNING: No face detected in document - potential fraud indicator");
+            }
+            
+            // Tampering results
+            if ((Boolean) tamperDetectionResult.getOrDefault("isTampered", false)) {
+                explanations.add("ALERT: Potential tampering detected in document");
+            } else {
+                explanations.add("Document integrity check: No obvious signs of tampering detected");
+            }
+            
+            // Quality results
+            @SuppressWarnings("unchecked")
+            Map<String, Boolean> qualityIndicators = (Map<String, Boolean>) qualityAnalysisResult.getOrDefault("qualityIndicators", Map.of());
+            if (qualityIndicators.getOrDefault("isBlurry", false)) {
+                explanations.add("Image quality assessment: Low quality detected - may affect analysis accuracy");
+            } else {
+                explanations.add("Image quality assessment: Good quality for analysis");
+            }
+            
+            if (!qualityIndicators.getOrDefault("hasGoodLighting", false)) {
+                explanations.add("Lighting conditions: Poor lighting detected - may impact OCR accuracy");
             }
         } else {
-            explanations.add("WARNING: No face detected in document - potential fraud indicator");
-        }
-        
-        // Tampering results
-        if ((Boolean) tamperDetectionResult.getOrDefault("isTampered", false)) {
-            explanations.add("ALERT: Potential tampering detected in document");
-        } else {
-            explanations.add("Document integrity check: No obvious signs of tampering detected");
-        }
-        
-        // Quality results
-        @SuppressWarnings("unchecked")
-        Map<String, Boolean> qualityIndicators = (Map<String, Boolean>) qualityAnalysisResult.getOrDefault("qualityIndicators", Map.of());
-        if (qualityIndicators.getOrDefault("isBlurry", false)) {
-            explanations.add("Image quality assessment: Low quality detected - may affect analysis accuracy");
-        } else {
-            explanations.add("Image quality assessment: Good quality for analysis");
-        }
-        
-        if (!qualityIndicators.getOrDefault("hasGoodLighting", false)) {
-            explanations.add("Lighting conditions: Poor lighting detected - may impact OCR accuracy");
+            explanations.add("Image-based face and tamper checks skipped for PDF input.");
         }
         
         // Identity info extraction
@@ -304,6 +336,40 @@ public class VerificationService {
             .isTampered(isTampered)
             .build();
 }
+
+    private boolean isPdfFile(MultipartFile file) {
+        String contentType = file.getContentType();
+        String originalFilename = file.getOriginalFilename();
+        return "application/pdf".equalsIgnoreCase(contentType)
+                || (originalFilename != null && originalFilename.toLowerCase().endsWith(".pdf"));
+    }
+
+    private Map<String, Object> defaultFaceDetectionResult() {
+        return Map.of(
+                "faceCount", 0,
+                "isFaceDetected", false,
+                "highestConfidence", 0.0d,
+                "faces", List.of()
+        );
+    }
+
+    private Map<String, Object> defaultTamperDetectionResult() {
+        return Map.of(
+                "isTampered", false,
+                "hasSuspiciousContent", false
+        );
+    }
+
+    private Map<String, Object> defaultQualityAnalysisResult() {
+        return Map.of(
+                "labels", List.of(),
+                "qualityIndicators", Map.of(
+                        "isBlurry", false,
+                        "hasGoodLighting", true,
+                        "isDocument", true
+                )
+        );
+    }
 
     /**
      * Generates SHA-256 hash of the file content

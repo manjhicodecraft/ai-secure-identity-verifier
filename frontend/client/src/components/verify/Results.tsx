@@ -3,7 +3,7 @@ import { type VerificationResultResponse } from "@shared/routes";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle, Info, ShieldAlert, ScanFace, FileText, Calendar } from "lucide-react";
+import { AlertTriangle, CheckCircle, Info, ShieldAlert, ScanFace, FileText, Calendar, Fingerprint } from "lucide-react";
 import { clsx } from "clsx";
 
 interface ResultsProps {
